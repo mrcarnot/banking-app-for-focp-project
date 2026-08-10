@@ -1,7 +1,11 @@
 #pragma once
 #include <string>
 
-enum class TxType { Deposit, Withdrawal, Transfer_Debit, Transfer_Credit, Interest, PinChange };
+enum class TxType {
+    Deposit, Withdrawal, Transfer_Debit, Transfer_Credit,
+    Interest, PinChange,
+    LoanDisbursement, LoanRepayment
+};
 
 struct Transaction {
     std::string txId;
