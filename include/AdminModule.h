@@ -19,7 +19,6 @@ class AdminModule {
     bool authenticate() {
         std::string user = InputHelper::getString("Admin username: ");
         std::string pass = InputHelper::getString("Admin password: ");
-        // Fixed credentials for now; hashing comes in the bonus phase.
         if (user == "admin" && pass == "admin123") {
             std::cout << "\nLogin successful.\n";
             audit.log(DateTime::now(), "admin", "LOGIN", "Admin logged in");
@@ -64,7 +63,7 @@ class AdminModule {
         acc.address             = address;
         acc.balance             = opening;
         acc.status              = AccountStatus::Active;
-        acc.pinHash             = pin;   // plain for now; hashing in bonus phase
+        acc.pinHash             = Validator::hashPin(pin);
         acc.pinAttempts         = 0;
         acc.dailyWithdrawn      = 0.0;
         acc.lastTransactionDate = DateTime::today();

@@ -9,6 +9,7 @@
 #include "Config.h"
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 #include <algorithm>
 
 class ATMModule {
@@ -40,6 +41,22 @@ class ATMModule {
         }
     }
 
+    // BONUS #4: receipt generation
+    void writeReceipt(const std::string& txId, const std::string& type, double amount, double newBalance) {
+        std::ofstream out("../receipts/receipt_" + txId + ".txt");
+        if (!out.is_open()) return;
+        out << "========================================\n";
+        out << "           TRANSACTION RECEIPT\n";
+        out << "========================================\n";
+        out << "Account:     " << currentAccount.accountNumber << "\n";
+        out << "Holder:      " << currentAccount.holderName << "\n";
+        out << "Type:        " << type << "\n";
+        out << "Amount:      " << std::fixed << std::setprecision(2) << amount << "\n";
+        out << "New Balance: " << std::fixed << std::setprecision(2) << newBalance << "\n";
+        out << "Timestamp:   " << DateTime::now() << "\n";
+        out << "========================================\n";
+    }
+
     // --- Feature 1: Authentication ---
     bool authenticate() {
         std::string num = InputHelper::getString("Account number: ");
@@ -65,9 +82,9 @@ class ATMModule {
             return false;
         }
 
-        std::string pin = InputHelper::getString("PIN: ");
+        std::string pin = InputHelper::getHidden("PIN: ");
 
-        if (pin == acc.pinHash) {
+        if (Validator::hashPin(pin) == acc.pinHash) {
             acc.pinAttempts = 0;
             accountRepo.save(acc);
             currentAccount = acc;
@@ -105,6 +122,7 @@ class ATMModule {
                       << std::fixed << std::setprecision(2) << currentAccount.balance << "\n";
             audit.log(DateTime::now(), currentAccount.accountNumber, "WITHDRAW",
                       "Withdrew " + std::to_string(amount));
+            writeReceipt(result.value.txId, "Withdrawal", amount, currentAccount.balance);
         } else {
             std::cout << "Withdrawal failed: " << result.error << "\n";
         }
@@ -120,6 +138,7 @@ class ATMModule {
                       << std::fixed << std::setprecision(2) << currentAccount.balance << "\n";
             audit.log(DateTime::now(), currentAccount.accountNumber, "DEPOSIT",
                       "Deposited " + std::to_string(amount));
+            writeReceipt(result.value.txId, "Deposit", amount, currentAccount.balance);
         } else {
             std::cout << "Deposit failed: " << result.error << "\n";
         }
@@ -139,7 +158,7 @@ class ATMModule {
 
         double amount = InputHelper::getPositiveDouble("Amount to transfer: ");
 
-        // BONUS #7 hook: large transfers need OTP - checked here, implemented fully in the bonus phase
+        // BONUS #7 hook: large transfers need OTP - checked here, implemented fully in a later phase
         if (amount >= Config::OTP_THRESHOLD) {
             std::cout << "[Note: this transfer exceeds the OTP threshold - OTP verification will be added in a later phase]\n";
         }
@@ -150,6 +169,7 @@ class ATMModule {
                       << std::fixed << std::setprecision(2) << currentAccount.balance << "\n";
             audit.log(DateTime::now(), currentAccount.accountNumber, "TRANSFER",
                       "Transferred " + std::to_string(amount) + " to " + toNum);
+            writeReceipt(result.value.first.txId, "Transfer-Out", amount, currentAccount.balance);
         } else {
             std::cout << "Transfer failed: " << result.error << "\n";
         }
@@ -159,7 +179,6 @@ class ATMModule {
     void miniStatement() {
         auto all = txRepo.loadForAccount(currentAccount.accountNumber);
 
-        // Newest first
         std::sort(all.begin(), all.end(), [](const Transaction& a, const Transaction& b) {
             return a.timestamp > b.timestamp;
         });
@@ -183,25 +202,25 @@ class ATMModule {
 
     // --- Feature 7: Change PIN ---
     void changePin() {
-        std::string current = InputHelper::getString("\nCurrent PIN: ");
-        if (current != currentAccount.pinHash) {
+        std::string current = InputHelper::getHidden("\nCurrent PIN: ");
+        if (Validator::hashPin(current) != currentAccount.pinHash) {
             std::cout << "Incorrect current PIN.\n";
             return;
         }
 
-        std::string newPin = InputHelper::getString("New PIN (4 digits): ");
+        std::string newPin = InputHelper::getHidden("New PIN (4 digits): ");
         if (!Validator::isValidPin(newPin)) {
             std::cout << "Invalid PIN format. Must be exactly 4 digits.\n";
             return;
         }
 
-        std::string confirmPin = InputHelper::getString("Confirm new PIN: ");
+        std::string confirmPin = InputHelper::getHidden("Confirm new PIN: ");
         if (newPin != confirmPin) {
             std::cout << "PINs do not match. PIN not changed.\n";
             return;
         }
 
-        currentAccount.pinHash = newPin;
+        currentAccount.pinHash = Validator::hashPin(newPin);
         if (accountRepo.save(currentAccount)) {
             std::cout << "PIN changed successfully.\n";
 

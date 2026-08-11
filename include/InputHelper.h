@@ -3,6 +3,7 @@
 #include <string>
 #include <sstream>
 #include <limits>
+#include <conio.h>
 
 namespace InputHelper {
 
@@ -49,5 +50,25 @@ namespace InputHelper {
             if (value > 0) return value;
             std::cout << "  Amount must be greater than zero.\n";
         }
+    }
+
+    // BONUS #1: hidden PIN entry (shows * instead of the typed digits)
+    inline std::string getHidden(const std::string& prompt) {
+        std::cout << prompt;
+        std::string input;
+        char ch;
+        while ((ch = _getch()) != '\r') {
+            if (ch == '\b') {
+                if (!input.empty()) {
+                    input.pop_back();
+                    std::cout << "\b \b";
+                }
+            } else {
+                input += ch;
+                std::cout << '*';
+            }
+        }
+        std::cout << "\n";
+        return input;
     }
 }

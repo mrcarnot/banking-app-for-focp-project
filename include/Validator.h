@@ -37,4 +37,13 @@ namespace Validator {
     inline bool isWithinDailyLimit(const Account& a, double withdrawAmt) {
         return (a.dailyWithdrawn + withdrawAmt) <= Config::DAILY_WITHDRAW_LIMIT;
     }
+
+    // BONUS #9: PIN hashing (djb2 algorithm)
+    inline std::string hashPin(const std::string& pin) {
+        unsigned long hash = 5381;
+        for (char c : pin) {
+            hash = ((hash << 5) + hash) + static_cast<unsigned char>(c);
+        }
+        return std::to_string(hash);
+    }
 }
