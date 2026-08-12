@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(include)
 
-file(GLOB SOURCES "src/*.cpp")
+# Console application (existing)
+add_executable(BankingApp src/main.cpp)
 
-add_executable(BankingApp ${SOURCES})
+# GUI application (Win32)
+if(WIN32)
+    add_executable(BankingAppGUI WIN32 src/main_gui.cpp)
+    target_link_libraries(BankingAppGUI gdi32 user32)
+endif()
