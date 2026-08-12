@@ -1,4 +1,5 @@
 #pragma once
+#include <random>
 #include "FileAccountRepository.h"
 #include "FileTransactionRepository.h"
 #include "TransactionEngine.h"
@@ -56,7 +57,12 @@ class ATMModule {
         out << "Timestamp:   " << DateTime::now() << "\n";
         out << "========================================\n";
     }
-
+    // BONUS #7: OTP generation for large transfers
+    std::string generateOTP() {
+        static std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<int> dist(1000, 9999);
+        return std::to_string(dist(rng));
+    }
     // --- Feature 1: Authentication ---
     bool authenticate() {
         std::string num = InputHelper::getString("Account number: ");
@@ -160,7 +166,13 @@ class ATMModule {
 
         // BONUS #7 hook: large transfers need OTP - checked here, implemented fully in a later phase
         if (amount >= Config::OTP_THRESHOLD) {
-            std::cout << "[Note: this transfer exceeds the OTP threshold - OTP verification will be added in a later phase]\n";
+            std::string otp = generateOTP();
+            std::cout << "\n[SMS Simulation] Your one-time code is: " << otp << "\n";
+            std::string entered = InputHelper::getString("Enter the OTP to confirm this transfer: ");
+            if (entered != otp) {
+                std::cout << "Incorrect OTP. Transfer cancelled.\n";
+                return;
+            }
         }
 
         auto result = engine.transfer(currentAccount, destAcc, amount, DateTime::now());
@@ -225,7 +237,7 @@ class ATMModule {
             std::cout << "PIN changed successfully.\n";
 
             Transaction tx;
-            tx.txId = "TXPIN" + DateTime::now();
+            tx.txId = engine.makeTxId();
             tx.accountNumber = currentAccount.accountNumber;
             tx.type = TxType::PinChange;
             tx.amount = 0;

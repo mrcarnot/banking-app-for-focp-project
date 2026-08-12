@@ -11,12 +11,21 @@ class TransactionEngine {
     IAccountRepository&     accountRepo;
     ITransactionRepository& txRepo;
 
+public:
     std::string makeTxId() {
-        static int counter = 1000;
-        return "TX" + std::to_string(++counter);
+        auto all = txRepo.loadAll();
+        int maxNum = 1000;
+        for (const auto& t : all) {
+            if (t.txId.size() > 2 && t.txId.substr(0, 2) == "TX") {
+                try {
+                    int n = std::stoi(t.txId.substr(2));
+                    if (n > maxNum) maxNum = n;
+                } catch (...) { /* skip malformed IDs */ }
+            }
+        }
+        return "TX" + std::to_string(maxNum + 1);
     }
 
-public:
     TransactionEngine(IAccountRepository& accRepo, ITransactionRepository& transRepo)
         : accountRepo(accRepo), txRepo(transRepo) {}
 
@@ -113,14 +122,17 @@ public:
         Account fromBackup = from;
         Account toBackup = to;
 
-        std::string refId = "REF" + makeTxId();
+        std::string debitId = makeTxId();
+        int debitNum = std::stoi(debitId.substr(2));
+        std::string creditId = "TX" + std::to_string(debitNum + 1);
+        std::string refId = "REF" + debitId;
 
         from.balance -= amount;
         from.dailyWithdrawn += amount;
         to.balance += amount;
 
         Transaction debitTx;
-        debitTx.txId = makeTxId();
+        debitTx.txId = debitId;
         debitTx.accountNumber = from.accountNumber;
         debitTx.type = TxType::Transfer_Debit;
         debitTx.amount = amount;
@@ -130,7 +142,7 @@ public:
         debitTx.description = "Transfer to " + to.accountNumber;
 
         Transaction creditTx;
-        creditTx.txId = makeTxId();
+        creditTx.txId = creditId;
         creditTx.accountNumber = to.accountNumber;
         creditTx.type = TxType::Transfer_Credit;
         creditTx.amount = amount;

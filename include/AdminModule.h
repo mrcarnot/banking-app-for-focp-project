@@ -94,6 +94,19 @@ class AdminModule {
         return std::to_string(maxNum + 1);
     }
 
+    std::string generateTxId() {
+        auto all = txRepo.loadAll();
+        int maxNum = 1000;
+        for (const auto& t : all) {
+            if (t.txId.size() > 2 && t.txId.substr(0, 2) == "TX") {
+                try {
+                    int n = std::stoi(t.txId.substr(2));
+                    if (n > maxNum) maxNum = n;
+                } catch (...) { }
+            }
+        }
+        return "TX" + std::to_string(maxNum + 1);
+    }
     // --- Feature 3: View one account / list all ---
     void viewAccount() {
         std::string num = InputHelper::getString("\nAccount number: ");
@@ -310,7 +323,45 @@ class AdminModule {
         std::cout << "=======================================\n";
         audit.log(DateTime::now(), "admin", "EOD_REPORT", "Generated end-of-day report");
     }
+    // BONUS #5: savings interest / month-end run
+    void runInterest() {
+        auto accounts = accountRepo.loadAll();
+        int creditedCount = 0;
+        double totalCredited = 0.0;
 
+        for (auto& acc : accounts) {
+            if (acc.type != AccountType::Savings) continue;
+            if (acc.status != AccountStatus::Active) continue;
+            if (acc.balance < Config::MIN_BALANCE_FOR_PROFIT) continue;
+
+            double interest = acc.balance * (Config::ANNUAL_INTEREST_RATE / 12.0);
+            double newBalance = acc.balance + interest;
+
+            Transaction tx;
+            tx.txId = generateTxId();
+            tx.accountNumber = acc.accountNumber;
+            tx.type = TxType::Interest;
+            tx.amount = interest;
+            tx.timestamp = DateTime::now();
+            tx.resultingBalance = newBalance;
+            tx.referenceId = "";
+            tx.description = "Monthly savings interest";
+
+            acc.balance = newBalance;
+
+            if (accountRepo.save(acc)) {
+                txRepo.append(tx);
+                creditedCount++;
+                totalCredited += interest;
+            }
+        }
+
+        std::cout << "\nInterest run complete. Credited " << creditedCount
+                  << " account(s), total interest paid: "
+                  << std::fixed << std::setprecision(2) << totalCredited << "\n";
+        audit.log(DateTime::now(), "admin", "INTEREST_RUN",
+                  "Credited interest to " + std::to_string(creditedCount) + " accounts, total " + std::to_string(totalCredited));
+    }
 public:
     AdminModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog)
         : accountRepo(accRepo), txRepo(transRepo), audit(auditLog) {}
@@ -328,6 +379,7 @@ public:
                       << "6. Freeze/Unfreeze/Unlock\n"
                       << "7. Transaction history\n"
                       << "8. End-of-day report\n"
+                      << "9. Run monthly interest\n"
                       << "0. Logout\n";
             int choice = InputHelper::getInt("Choose: ");
             switch (choice) {
@@ -339,6 +391,7 @@ public:
                 case 6: manageStatus();    break;
                 case 7: globalHistory();   break;
                 case 8: endOfDayReport();  break;
+                case 9: runInterest();     break;
                 case 0:
                     audit.log(DateTime::now(), "admin", "LOGOUT", "Admin logged out");
                     std::cout << "Logged out.\n";
