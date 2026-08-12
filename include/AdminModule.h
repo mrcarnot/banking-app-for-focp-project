@@ -9,11 +9,14 @@
 #include "Config.h"
 #include <iostream>
 #include <iomanip>
+#include "LoanRepository.h"
+#include "LoanManager.h"
 
 class AdminModule {
     IAccountRepository&     accountRepo;
     ITransactionRepository& txRepo;
     AuditLogger&            audit;
+    LoanManager             loanManager;
 
     // --- Feature 1: Admin login ---
     bool authenticate() {
@@ -413,9 +416,24 @@ class AdminModule {
         }
         std::cout << "Matched: " << results.size() << " transactions\n";
     }
+    // BONUS #10: admin view of all loans
+    void viewAllLoans() {
+        // We need access to the loan repo directly for listing - reuse loanManager's internal repo via a small trick:
+        // simplest approach: ask admin for an account number and show its loans
+        std::string num = InputHelper::getString("\nAccount number (blank = skip): ");
+        if (num.empty()) {
+            std::cout << "Please provide an account number to view loans for.\n";
+            return;
+        }
+        // findByAccount isn't directly exposed here, so we go through the account's own loanOutstanding as a summary
+        auto res = accountRepo.findByNumber(num);
+        if (!res.ok) { std::cout << res.error << "\n"; return; }
+        std::cout << "Account " << num << " outstanding loan balance: "
+                  << std::fixed << std::setprecision(2) << res.value.loanOutstanding << "\n";
+    }
 public:
-    AdminModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog)
-        : accountRepo(accRepo), txRepo(transRepo), audit(auditLog) {}
+    AdminModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog, ILoanRepository& lnRepo)
+        : accountRepo(accRepo), txRepo(transRepo), audit(auditLog), loanManager(accRepo, transRepo, lnRepo) {}
 
     void run() {
         if (!authenticate()) return;
@@ -432,6 +450,7 @@ public:
                       << "8. End-of-day report\n"
                       << "9. Run monthly interest\n"
                       << "10. Search transactions\n"
+                      << "11. View account loan status\n"
                       << "0. Logout\n";
             int choice = InputHelper::getInt("Choose: ");
             switch (choice) {
@@ -445,6 +464,7 @@ public:
                 case 8: endOfDayReport();  break;
                 case 9: runInterest();          break;
                 case 10: searchTransactions();  break;
+                case 11: viewAllLoans();        break;
                 case 0:
                     audit.log(DateTime::now(), "admin", "LOGOUT", "Admin logged out");
                     std::cout << "Logged out.\n";

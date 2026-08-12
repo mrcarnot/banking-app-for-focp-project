@@ -1,5 +1,4 @@
 #pragma once
-#include <random>
 #include "FileAccountRepository.h"
 #include "FileTransactionRepository.h"
 #include "TransactionEngine.h"
@@ -7,8 +6,15 @@
 #include "AuditLogger.h"
 #include "InputHelper.h"
 #include "DateTime.h"
-#include "CashInventory.h"
 #include "Config.h"
+#include <iostream>
+#include <iomanip>
+#include <fstream>
+#include <algorithm>
+#include <random>
+#include "CashInventory.h"
+#include "LoanRepository.h"
+#include "LoanManager.h"
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -20,6 +26,8 @@ class ATMModule {
     TransactionEngine       engine;
     AuditLogger&            audit;
     CashInventory           atmCash;
+    LoanManager             loanManager;
+    ILoanRepository&        loanRepo;
     Account                 currentAccount;
 
     std::string txTypeToString(TxType t) {
@@ -44,7 +52,6 @@ class ATMModule {
         }
     }
 
-    // BONUS #4: receipt generation
     void writeReceipt(const std::string& txId, const std::string& type, double amount, double newBalance) {
         std::ofstream out("../receipts/receipt_" + txId + ".txt");
         if (!out.is_open()) return;
@@ -59,12 +66,13 @@ class ATMModule {
         out << "Timestamp:   " << DateTime::now() << "\n";
         out << "========================================\n";
     }
-    // BONUS #7: OTP generation for large transfers
+
     std::string generateOTP() {
         static std::mt19937 rng(std::random_device{}());
         std::uniform_int_distribution<int> dist(1000, 9999);
         return std::to_string(dist(rng));
     }
+
     // --- Feature 1: Authentication ---
     bool authenticate() {
         std::string num = InputHelper::getString("Account number: ");
@@ -100,7 +108,6 @@ class ATMModule {
             return true;
         }
 
-        // Wrong PIN
         acc.pinAttempts++;
         std::cout << "Incorrect PIN. Attempt " << acc.pinAttempts << " of " << Config::MAX_PIN_ATTEMPTS << ".\n";
 
@@ -175,7 +182,6 @@ class ATMModule {
 
         double amount = InputHelper::getPositiveDouble("Amount to transfer: ");
 
-        // BONUS #7 hook: large transfers need OTP - checked here, implemented fully in a later phase
         if (amount >= Config::OTP_THRESHOLD) {
             std::string otp = generateOTP();
             std::cout << "\n[SMS Simulation] Your one-time code is: " << otp << "\n";
@@ -264,9 +270,61 @@ class ATMModule {
         }
     }
 
+    // BONUS #10: apply for a loan
+    void applyForLoan() {
+        auto eligible = loanManager.checkEligibility(currentAccount);
+        if (!eligible.ok) {
+            std::cout << "\nNot eligible: " << eligible.error << "\n";
+            return;
+        }
+        std::cout << "\nYou are eligible for up to: " << std::fixed << std::setprecision(2) << eligible.value << "\n";
+        double amount = InputHelper::getPositiveDouble("Loan amount requested: ");
+        int installments = InputHelper::getInt("Number of monthly installments: ");
+
+        auto result = loanManager.disburseLoan(currentAccount, amount, installments, DateTime::now());
+        if (result.ok) {
+            std::cout << "Loan approved! " << amount << " credited to your account.\n";
+            std::cout << "Monthly installment: " << std::fixed << std::setprecision(2) << result.value.monthlyInstallment << "\n";
+            audit.log(DateTime::now(), currentAccount.accountNumber, "LOAN_DISBURSED",
+                      "Loan " + result.value.loanId + " for " + std::to_string(amount));
+        } else {
+            std::cout << "Loan application failed: " << result.error << "\n";
+        }
+    }
+
+    // BONUS #10: repay a loan installment
+    void repayLoan() {
+        auto loans = loanRepo.findByAccount(currentAccount.accountNumber);
+        Loan* active = nullptr;
+        for (auto& l : loans) {
+            if (l.status == LoanStatus::Active) { active = &l; break; }
+        }
+        if (!active) {
+            std::cout << "\nYou have no active loan.\n";
+            return;
+        }
+        std::cout << "\nOutstanding: " << std::fixed << std::setprecision(2) << active->outstanding
+                  << " | Next installment: " << active->monthlyInstallment << "\n";
+        std::string confirm = InputHelper::getString("Pay this installment now? (y/n): ");
+        if (confirm != "y" && confirm != "Y") { std::cout << "Cancelled.\n"; return; }
+
+        auto result = loanManager.repayInstallment(currentAccount, *active, DateTime::now());
+        if (result.ok) {
+            std::cout << "Payment successful. Remaining balance on loan: "
+                      << std::fixed << std::setprecision(2) << active->outstanding << "\n";
+            if (active->status == LoanStatus::Repaid) {
+                std::cout << "Loan fully repaid!\n";
+            }
+            audit.log(DateTime::now(), currentAccount.accountNumber, "LOAN_REPAYMENT", "Installment paid");
+        } else {
+            std::cout << "Payment failed: " << result.error << "\n";
+        }
+    }
+
 public:
-    ATMModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog, const std::string& cashFilePath)
-        : accountRepo(accRepo), txRepo(transRepo), engine(accRepo, transRepo), audit(auditLog), atmCash(cashFilePath) {}
+    ATMModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog, const std::string& cashFilePath, ILoanRepository& lnRepo)
+        : accountRepo(accRepo), txRepo(transRepo), engine(accRepo, transRepo), audit(auditLog), atmCash(cashFilePath),
+          loanManager(accRepo, transRepo, lnRepo), loanRepo(lnRepo) {}
 
     // --- Feature 8: Clean logout (built into the run loop) ---
     void run() {
@@ -283,6 +341,8 @@ public:
                       << "4. Transfer\n"
                       << "5. Mini-statement\n"
                       << "6. Change PIN\n"
+                      << "7. Apply for loan\n"
+                      << "8. Repay loan\n"
                       << "0. Logout\n";
             int choice = InputHelper::getInt("Choose: ");
             switch (choice) {
@@ -292,6 +352,8 @@ public:
                 case 4: transfer();       break;
                 case 5: miniStatement();  break;
                 case 6: changePin();      break;
+                case 7: applyForLoan();   break;
+                case 8: repayLoan();      break;
                 case 0:
                     std::cout << "Thank you for banking with us. Goodbye, " << currentAccount.holderName << ".\n";
                     audit.log(DateTime::now(), currentAccount.accountNumber, "LOGOUT", "ATM session ended");

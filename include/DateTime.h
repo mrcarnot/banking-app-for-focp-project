@@ -25,4 +25,14 @@ namespace DateTime {
                       lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday);
         return std::string(buf);
     }
+    // Days between a stored "YYYY-MM-DD" date and today - used for loan eligibility (account age)
+    inline int daysSince(const std::string& dateStr) {
+        std::tm t = {};
+        std::sscanf(dateStr.c_str(), "%d-%d-%d", &t.tm_year, &t.tm_mon, &t.tm_mday);
+        t.tm_year -= 1900;
+        t.tm_mon  -= 1;
+        std::time_t past = std::mktime(&t);
+        std::time_t now  = std::time(nullptr);
+        return static_cast<int>(std::difftime(now, past) / (60 * 60 * 24));
+    }
 }
