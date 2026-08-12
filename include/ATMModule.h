@@ -7,6 +7,7 @@
 #include "AuditLogger.h"
 #include "InputHelper.h"
 #include "DateTime.h"
+#include "CashInventory.h"
 #include "Config.h"
 #include <iostream>
 #include <iomanip>
@@ -18,6 +19,7 @@ class ATMModule {
     ITransactionRepository& txRepo;
     TransactionEngine       engine;
     AuditLogger&            audit;
+    CashInventory           atmCash;
     Account                 currentAccount;
 
     std::string txTypeToString(TxType t) {
@@ -122,8 +124,16 @@ class ATMModule {
         resetDailyIfNewDay(currentAccount);
         double amount = InputHelper::getPositiveDouble("\nAmount to withdraw: ");
 
+        if (!atmCash.hasEnough(amount)) {
+            std::cout << "Withdrawal failed: ATM does not have enough cash available. Please try a smaller amount or visit a branch.\n";
+            audit.log(DateTime::now(), currentAccount.accountNumber, "ATM_CASH_SHORTAGE",
+                      "Withdrawal of " + std::to_string(amount) + " blocked - insufficient ATM cash");
+            return;
+        }
+
         auto result = engine.withdraw(currentAccount, amount, DateTime::now());
         if (result.ok) {
+            atmCash.decrease(amount);
             std::cout << "Withdrawal successful. New balance: "
                       << std::fixed << std::setprecision(2) << currentAccount.balance << "\n";
             audit.log(DateTime::now(), currentAccount.accountNumber, "WITHDRAW",
@@ -140,6 +150,7 @@ class ATMModule {
 
         auto result = engine.deposit(currentAccount, amount, DateTime::now());
         if (result.ok) {
+            atmCash.increase(amount);
             std::cout << "Deposit successful. New balance: "
                       << std::fixed << std::setprecision(2) << currentAccount.balance << "\n";
             audit.log(DateTime::now(), currentAccount.accountNumber, "DEPOSIT",
@@ -254,8 +265,8 @@ class ATMModule {
     }
 
 public:
-    ATMModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog)
-        : accountRepo(accRepo), txRepo(transRepo), engine(accRepo, transRepo), audit(auditLog) {}
+    ATMModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog, const std::string& cashFilePath)
+        : accountRepo(accRepo), txRepo(transRepo), engine(accRepo, transRepo), audit(auditLog), atmCash(cashFilePath) {}
 
     // --- Feature 8: Clean logout (built into the run loop) ---
     void run() {

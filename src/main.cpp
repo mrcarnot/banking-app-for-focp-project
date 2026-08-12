@@ -25,7 +25,7 @@ int main() {
             AdminModule admin(accountRepo, txRepo, audit);
             admin.run();
         } else if (choice == 2) {
-            ATMModule atm(accountRepo, txRepo, audit);
+            ATMModule atm(accountRepo, txRepo, audit, "../data/atm_cash.dat");
             atm.run();
         } else if (choice == 0) {
             cout << "Goodbye.\n";
