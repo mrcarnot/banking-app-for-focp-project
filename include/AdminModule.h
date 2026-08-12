@@ -362,6 +362,57 @@ class AdminModule {
         audit.log(DateTime::now(), "admin", "INTEREST_RUN",
                   "Credited interest to " + std::to_string(creditedCount) + " accounts, total " + std::to_string(totalCredited));
     }
+    // BONUS #6: transaction search / filter
+    void searchTransactions() {
+        TxFilter f;
+
+        std::cout << "\n=== Transaction Search ===\n(Leave any field blank to skip that filter)\n";
+
+        f.accountNumber = InputHelper::getString("Account number: ");
+        f.dateFrom      = InputHelper::getString("Date from (YYYY-MM-DD): ");
+        f.dateTo        = InputHelper::getString("Date to (YYYY-MM-DD): ");
+
+        std::string typeFilter = InputHelper::getString("Filter by type? (y/n): ");
+        if (typeFilter == "y" || typeFilter == "Y") {
+            std::cout << "1.Deposit 2.Withdrawal 3.Transfer-Out 4.Transfer-In 5.Interest 6.PinChange\n";
+            int t = InputHelper::getInt("Type number: ");
+            f.filterByType = true;
+            switch (t) {
+                case 1: f.type = TxType::Deposit; break;
+                case 2: f.type = TxType::Withdrawal; break;
+                case 3: f.type = TxType::Transfer_Debit; break;
+                case 4: f.type = TxType::Transfer_Credit; break;
+                case 5: f.type = TxType::Interest; break;
+                case 6: f.type = TxType::PinChange; break;
+                default: f.filterByType = false;
+            }
+        }
+
+        std::string minStr = InputHelper::getString("Minimum amount (blank = any): ");
+        if (!minStr.empty()) f.minAmount = std::stod(minStr);
+
+        std::string maxStr = InputHelper::getString("Maximum amount (blank = any): ");
+        if (!maxStr.empty()) f.maxAmount = std::stod(maxStr);
+
+        auto results = txRepo.query(f);
+
+        std::cout << "\n" << std::left
+                  << std::setw(10) << "TxID"
+                  << std::setw(10) << "Account"
+                  << std::setw(16) << "Type"
+                  << std::setw(12) << "Amount"
+                  << std::setw(22) << "Timestamp" << "\n";
+        std::cout << std::string(70, '-') << "\n";
+        for (const auto& t : results) {
+            std::cout << std::left
+                      << std::setw(10) << t.txId
+                      << std::setw(10) << t.accountNumber
+                      << std::setw(16) << txTypeToString(t.type)
+                      << std::setw(12) << std::fixed << std::setprecision(2) << t.amount
+                      << std::setw(22) << t.timestamp << "\n";
+        }
+        std::cout << "Matched: " << results.size() << " transactions\n";
+    }
 public:
     AdminModule(IAccountRepository& accRepo, ITransactionRepository& transRepo, AuditLogger& auditLog)
         : accountRepo(accRepo), txRepo(transRepo), audit(auditLog) {}
@@ -380,6 +431,7 @@ public:
                       << "7. Transaction history\n"
                       << "8. End-of-day report\n"
                       << "9. Run monthly interest\n"
+                      << "10. Search transactions\n"
                       << "0. Logout\n";
             int choice = InputHelper::getInt("Choose: ");
             switch (choice) {
@@ -391,7 +443,8 @@ public:
                 case 6: manageStatus();    break;
                 case 7: globalHistory();   break;
                 case 8: endOfDayReport();  break;
-                case 9: runInterest();     break;
+                case 9: runInterest();          break;
+                case 10: searchTransactions();  break;
                 case 0:
                     audit.log(DateTime::now(), "admin", "LOGOUT", "Admin logged out");
                     std::cout << "Logged out.\n";
